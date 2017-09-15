@@ -19,18 +19,17 @@ extern "C" {
 
 extern char* CGPROF(fn_names)[];
 
-// extern uint64_t CGPROF(num_fn);
-
 class CallInfo {
 public:
   uint64_t caller;
   uint64_t callee;
   uint64_t line;
-  // std::string file_name;
+  std::string fname;
   bool
   operator==(const struct CallInfo& other) const {
     if (this->caller == other.caller && this->callee == other.callee
-        && this->line == other.line) {
+        && this->line == other.line
+        && this->fname == other.fname) {
       return true;
     }
     return false;
@@ -39,7 +38,8 @@ public:
   bool
   operator==(struct CallInfo& other) {
     if (this->caller == other.caller && this->callee == other.callee
-        && this->line == other.line) {
+        && this->line == other.line
+        && this->fname == other.fname) {
       return true;
     }
     return false;
@@ -62,6 +62,12 @@ public:
     if (this->line < other.line) {
       return true;
     }
+    if (this->line > other.line) {
+      return false;
+    }
+    if (this->fname < other.fname) {
+      return true;
+    }
     return false;
   }
   bool
@@ -81,6 +87,12 @@ public:
     if (this->line < other.line) {
       return true;
     }
+    if (this->line > other.line) {
+      return false;
+    }
+    if (this->fname < other.fname) {
+      return true;
+    }
     return false;
   }
 };
@@ -95,12 +107,13 @@ CGPROF(init)() {
 }
 
 void
-CGPROF(count)(uint64_t caller, uint64_t callee, uint64_t line) {
-  CounterType &call_counter = *call_counter_ptr;
+CGPROF(count)(uint64_t caller, uint64_t callee, uint64_t line, char* fname) {
+  CounterType& call_counter = *call_counter_ptr;
   CallInfo key;
   key.caller = caller;
   key.callee = callee;
   key.line   = line;
+  key.fname  = std::string(fname);
 
   if (call_counter.find(key) == call_counter.end()) {
     call_counter[key] = 1;
@@ -114,34 +127,20 @@ CGPROF(count)(uint64_t caller, uint64_t callee, uint64_t line) {
          call_counter[key]);
 }
 
+// extern uint64_t CGPROF(num_fn);
 // void
 // CGPROF(debug_print)() {
 //   printf("=====================\n"
-//          "fn_info\n"
+//          "fn_names\n"
 //          "=====================\n");
 //   for (auto i = 0; i < CGPROF(num_fn); i++) {
-//     auto info = CGPROF(fn_info)[i];
-//     printf("%lu %s %s %lu\n", i, info.name, info.fname, info.line);
-//   }
-
-//   printf("=====================\n"
-//          "raw fn calls\n"
-//          "=====================\n");
-//   printf("map size: %lu\n", call_counter.size());
-//   for (auto it = call_counter.begin(); it != call_counter.end(); it++) {
-//     auto call_info = it->first;
-//     auto freq      = it->second;
-//     auto caller_id = call_info.first;
-//     auto callee_id = call_info.second;
-//     printf("%lu %lu %lu\n", caller_id, callee_id, freq);
+//     printf("%lu %s\n", i, CGPROF(fn_info)[i]);
 //   }
 // }
 
 void
 CGPROF(print)() {
-  CounterType &call_counter = *call_counter_ptr;
-  // call_counter[std::make_pair(42, 42)]     = 42;
-  // call_counter[std::make_pair(1337, 1337)] = 1337;
+  CounterType& call_counter = *call_counter_ptr;
   // CGPROF(debug_print)();
 
   printf("map size: %lu\n", call_counter.size());
@@ -155,7 +154,7 @@ CGPROF(print)() {
     auto callee_name = CGPROF(fn_names)[call_info.callee];
     printf("%s %s %lu %s %lu\n",
            caller_name,
-           "???.c",
+           call_info.fname.c_str(),
            call_info.line,
            callee_name,
            freq);
