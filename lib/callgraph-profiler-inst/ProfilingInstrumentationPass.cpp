@@ -52,31 +52,39 @@ cmpt_fn_ids(llvm::ArrayRef<Function*> functions) {
   return id_map;
 }
 
-static DenseMap<llvm::StringRef, uint64_t>
-cmpt_name_id_map(llvm::ArrayRef<Function*> functions) {
-  DenseMap<llvm::StringRef, uint64_t> name_id_map;
-
-  size_t next_id = 0;
-  for (auto f : functions) {
-    name_id_map[f->getName()] = next_id;
-    std::cout << (f->getName()).str() << ": " << next_id << std::endl;
-    ++next_id;
+void
+create_id_addr_map(Module& m, std::vector<Function*> all_fn) {
+  auto num_fn   = all_fn.size();
+  auto& context = m.getContext();
+  auto* intTy   = Type::getInt64Ty(context);
+  auto* tableTy = ArrayType::get(intTy, num_fn);
+  std::vector<Constant*> values;
+  for (auto it = all_fn.begin(); it != all_fn.end(); it++) {
+    auto& f = *it;
+    values.push_back(f);
+    std::cout << "entry point registered: " << f->getName().str() << std::endl;
   }
 
-  return name_id_map;
+  auto* id_addr_map = ConstantArray::get(tableTy, values);
+  new GlobalVariable(m,
+                     tableTy,
+                     false,
+                     GlobalValue::ExternalLinkage,
+                     id_addr_map,
+                     "CaLlPrOfIlEr_id_addr_map");
 }
 
 void
-create_fn_names(Module& m, uint64_t num_fn) {
-  auto& context = m.getContext();
-
+create_fn_names(Module& m, std::vector<Function*> all_fn) {
+  auto& context  = m.getContext();
+  auto num_fn    = all_fn.size();
   auto* stringTy = Type::getInt8PtrTy(context);
   auto* tableTy  = ArrayType::get(stringTy, num_fn);
 
   std::vector<Constant*> values;
-  for (auto it = m.begin(); it != m.end(); it++) {
+  for (auto it = all_fn.begin(); it != all_fn.end(); it++) {
     auto& f = *it;
-    values.push_back(createConstantString(m, f.getName()));
+    values.push_back(createConstantString(m, f->getName()));
   }
 
   auto* fn_names = ConstantArray::get(tableTy, values);
@@ -97,18 +105,17 @@ ProfilingInstrumentationPass::runOnModule(llvm::Module& m) {
   // First identify the functions we wish to track
   std::vector<Function*> all_fn;
   for (auto& f : m) {
-    all_fn.push_back(&f);
+    if (!f.getName().startswith(StringLiteral("llvm.dbg"))) {
+      all_fn.push_back(&f);
+    }
   }
 
   // save analysis result
   fn_id_map   = cmpt_fn_ids(all_fn);
-  name_id_map = cmpt_name_id_map(all_fn);
-  std::cout << name_id_map[StringLiteral("b")] << std::endl;
-  std::cout << name_id_map[StringLiteral("???")] << std::endl;
   auto num_fn = all_fn.size();
-  create_fn_names(m, num_fn);
+  create_fn_names(m, all_fn);
+  create_id_addr_map(m, all_fn);
 
-  // debug
   auto* num_fn_global = ConstantInt::get(int64Ty, num_fn, false);
   new GlobalVariable(m,
                      int64Ty,
@@ -132,6 +139,7 @@ ProfilingInstrumentationPass::runOnModule(llvm::Module& m) {
   arg_types.push_back(stringTy);
   auto* countTy  = FunctionType::get(voidTy, arg_types, false);
   auto* count_fn = m.getOrInsertFunction("CaLlPrOfIlEr_count", countTy);
+  auto* fp_fn    = m.getOrInsertFunction("CaLlPrOfIlEr_handle_fp", countTy);
 
   // insert instructions
   for (auto f : all_fn) {
@@ -143,7 +151,7 @@ ProfilingInstrumentationPass::runOnModule(llvm::Module& m) {
     // Count each function as it is called.
     for (auto& bb : *f) {
       for (auto& i : bb) {
-        handleInstruction(m, CallSite(&i), f, count_fn);
+        handleInstruction(m, CallSite(&i), f, fp_fn, count_fn);
       }
     }
   }
@@ -155,6 +163,7 @@ void
 ProfilingInstrumentationPass::handleInstruction(Module& m,
                                                 CallSite cs,
                                                 Function* caller,
+                                                Value* fp_fn,
                                                 Value* count_fn) {
   auto instr = cs.getInstruction();
   // Check whether the instruction is actually a call
@@ -163,33 +172,39 @@ ProfilingInstrumentationPass::handleInstruction(Module& m,
   }
 
   // Check whether the called function is directly invoked
-  uint64_t callee_id;
-  StringRef callee_name;
   auto ptr    = cs.getCalledValue()->stripPointerCasts();
   auto callee = dyn_cast<Function>(ptr);
   if (!callee) {
     // called by ptr
-    callee_name = ptr->getName();
-    std::cout << callee_name.str() << std::endl;
-    callee_id = name_id_map[callee_name];
+    IRBuilder<> builder(cs.getInstruction());
+    auto addr = builder.CreatePtrToInt(ptr, builder.getInt64Ty());
+
+    auto loc = instr->getDebugLoc();
+    SmallVector<Value*, 4> args;
+    args.push_back(builder.getInt64(fn_id_map[caller]));
+    args.push_back(addr);
+    args.push_back(builder.getInt64(loc->getLine()));
+    args.push_back(createConstantString(m, loc->getFilename()));
+    builder.CreateCall(fp_fn, args);
+    return;
   } else {
     // directly called
-    callee_name = callee->getName();
-    callee_id   = fn_id_map[callee];
-  }
+    auto callee_name = callee->getName();
+    auto callee_id   = fn_id_map[callee];
 
-  if (callee_name.startswith(StringLiteral("llvm.dbg"))) {
-    // Blacklisted functions are not counted.
-    return;
-  }
-  auto loc = instr->getDebugLoc();
+    if (callee_name.startswith(StringLiteral("llvm.dbg"))) {
+      // Blacklisted functions are not counted.
+      return;
+    }
+    auto loc = instr->getDebugLoc();
 
-  // External functions are counted at their invocation sites.
-  SmallVector<Value*, 4> args;
-  IRBuilder<> builder(cs.getInstruction());
-  args.push_back(builder.getInt64(fn_id_map[caller]));
-  args.push_back(builder.getInt64(callee_id));
-  args.push_back(builder.getInt64(loc->getLine()));
-  args.push_back(createConstantString(m, loc->getFilename()));
-  builder.CreateCall(count_fn, args);
+    // External functions are counted at their invocation sites.
+    SmallVector<Value*, 4> args;
+    IRBuilder<> builder(cs.getInstruction());
+    args.push_back(builder.getInt64(fn_id_map[caller]));
+    args.push_back(builder.getInt64(callee_id));
+    args.push_back(builder.getInt64(loc->getLine()));
+    args.push_back(createConstantString(m, loc->getFilename()));
+    builder.CreateCall(count_fn, args);
+  }
 }

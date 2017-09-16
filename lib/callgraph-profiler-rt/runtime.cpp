@@ -18,6 +18,8 @@ extern "C" {
 // TODO: Add your runtime library data structures and functions here.
 
 extern char* CGPROF(fn_names)[];
+extern uint64_t CGPROF(id_addr_map)[];
+extern uint64_t CGPROF(num_fn);
 
 class CallInfo {
 public:
@@ -127,21 +129,38 @@ CGPROF(count)(uint64_t caller, uint64_t callee, uint64_t line, char* fname) {
          call_counter[key]);
 }
 
-// extern uint64_t CGPROF(num_fn);
-// void
-// CGPROF(debug_print)() {
-//   printf("=====================\n"
-//          "fn_names\n"
-//          "=====================\n");
-//   for (auto i = 0; i < CGPROF(num_fn); i++) {
-//     printf("%lu %s\n", i, CGPROF(fn_info)[i]);
-//   }
-// }
+void
+CGPROF(handle_fp)(uint64_t caller,
+                  uint64_t callee_addr,
+                  uint64_t line,
+                  char* fname) {
+  printf("fp call at %lu\n", callee_addr);
+  uint64_t callee;
+  for (auto i = 0; i < CGPROF(num_fn); i++) {
+    if (CGPROF(id_addr_map)[i] == callee_addr) {
+      callee = i;
+      CGPROF(count)(caller, callee, line, fname);
+      return;
+    }
+  }
+  printf("unknown fp call\n");
+}
+
+
+void
+CGPROF(debug_print)() {
+  printf("=====================\n"
+         "id_addr_map\n"
+         "=====================\n");
+  for (auto i = 0; i < CGPROF(num_fn); i++) {
+    printf("%lu: %lu\n", i, CGPROF(id_addr_map)[i]);
+  }
+}
 
 void
 CGPROF(print)() {
   CounterType& call_counter = *call_counter_ptr;
-  // CGPROF(debug_print)();
+  CGPROF(debug_print)();
 
   printf("map size: %lu\n", call_counter.size());
   printf("=====================\n"
@@ -158,11 +177,6 @@ CGPROF(print)() {
            call_info.line,
            callee_name,
            freq);
-    // std::cout << call_info.caller << " "
-    //           << "???.c"
-    //           << " " << call_info.line << " " << call_info.callee << " " <<
-    //           freq
-    //           << std::endl;
   }
 }
 }
