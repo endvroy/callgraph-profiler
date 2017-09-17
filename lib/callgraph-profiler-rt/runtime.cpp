@@ -122,11 +122,6 @@ CGPROF(count)(uint64_t caller, uint64_t callee, uint64_t line, char* fname) {
   } else {
     call_counter[key]++;
   }
-  printf("%lu %lu %lu = %lu\n",
-         key.caller,
-         key.callee,
-         key.line,
-         call_counter[key]);
 }
 
 void
@@ -134,7 +129,7 @@ CGPROF(handle_fp)(uint64_t caller,
                   uint64_t callee_addr,
                   uint64_t line,
                   char* fname) {
-  printf("fp call at %lu\n", callee_addr);
+  // printf("fp call at %lu\n", callee_addr);
   uint64_t callee;
   for (auto i = 0; i < CGPROF(num_fn); i++) {
     if (CGPROF(id_addr_map)[i] == callee_addr) {
@@ -160,9 +155,9 @@ CGPROF(debug_print)() {
 void
 CGPROF(print)() {
   CounterType& call_counter = *call_counter_ptr;
-  CGPROF(debug_print)();
+  // CGPROF(debug_print)();
 
-  printf("map size: %lu\n", call_counter.size());
+  // printf("map size: %lu\n", call_counter.size());
   printf("=====================\n"
          "Function Calls\n"
          "=====================\n");

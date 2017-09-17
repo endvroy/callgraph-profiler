@@ -44,8 +44,8 @@ cmpt_fn_ids(llvm::ArrayRef<Function*> functions) {
   size_t next_id = 0;
   for (auto f : functions) {
     id_map[f] = next_id;
-    std::cout << (f->getName()).str() << ": " << next_id << " "
-              << "is_decl=" << f->isDeclaration() << std::endl;
+    // std::cout << (f->getName()).str() << ": " << next_id << " "
+    //           << "is_decl=" << f->isDeclaration() << std::endl;
     ++next_id;
   }
 
@@ -62,7 +62,7 @@ create_id_addr_map(Module& m, std::vector<Function*> all_fn) {
   for (auto it = all_fn.begin(); it != all_fn.end(); it++) {
     auto& f = *it;
     values.push_back(f);
-    std::cout << "entry point registered: " << f->getName().str() << std::endl;
+    // std::cout << "entry point registered: " << f->getName().str() << std::endl;
   }
 
   auto* id_addr_map = ConstantArray::get(tableTy, values);
