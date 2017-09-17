@@ -131,7 +131,7 @@ CGPROF(handle_fp)(uint64_t caller,
                   char* fname) {
   // printf("fp call at %lu\n", callee_addr);
   uint64_t callee;
-  for (auto i = 0; i < CGPROF(num_fn); i++) {
+  for (uint64_t i = 0; i < CGPROF(num_fn); i++) {
     if (CGPROF(id_addr_map)[i] == callee_addr) {
       callee = i;
       CGPROF(count)(caller, callee, line, fname);
@@ -147,7 +147,7 @@ CGPROF(debug_print)() {
   printf("=====================\n"
          "id_addr_map\n"
          "=====================\n");
-  for (auto i = 0; i < CGPROF(num_fn); i++) {
+  for (uint64_t i = 0; i < CGPROF(num_fn); i++) {
     printf("%lu: %lu\n", i, CGPROF(id_addr_map)[i]);
   }
 }
